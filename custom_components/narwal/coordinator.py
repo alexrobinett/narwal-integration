@@ -51,7 +51,7 @@ MAX_CONSECUTIVE_FAILURES = 3
 KEEPALIVE_INTERVAL = timedelta(seconds=50)
 
 IDLE_ACTIVITIES = frozenset({
-    RobotActivity.SLEEPING, RobotActivity.STANDBY, RobotActivity.DOCKED, RobotActivity.CHARGING,
+    RobotActivity.SLEEPING, RobotActivity.DOCKED, RobotActivity.CHARGING,
 })
 
 
