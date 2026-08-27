@@ -32,3 +32,6 @@ adb_log*.txt
 captured_credentials.txt
 .env
 scripts/.env
+.venv/
+__pycache__/
+.pytest_cache/
