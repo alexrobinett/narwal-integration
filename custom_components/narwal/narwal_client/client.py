@@ -126,6 +126,9 @@ class NarwalClient:
 
     @property
     def fan_level(self) -> FanLevel | None:
+        """Fan level decoded from base-status field 26 (Z Ultra profile only)."""
+        if self.state.profile != "zultra":
+            return None
         raw = self.state.fan_level_raw
         return None if raw is None else fan_level_from_wire(self.product_key, raw)
 
