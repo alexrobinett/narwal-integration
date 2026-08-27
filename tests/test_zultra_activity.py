@@ -67,3 +67,37 @@ def test_unknown_sub1_is_reported_not_invented():
     s.update_base_status(bytes.fromhex("1a02084d"))
     assert s.activity == A.UNKNOWN
     assert s.is_docked is False
+
+
+def test_status_less_payload_keeps_previous_activity_and_flags():
+    s = _state(A.CLEANING)
+    s.update_base_status(P.RETURNING)
+    assert s.activity == A.RETURNING
+    # battery-only frame (field 2 = 31.0, no field 3): state must not change
+    s.update_base_status(bytes.fromhex("150000f841"))
+    assert s.activity == A.RETURNING
+    assert s.is_docked is False
+    assert s.is_returning is True
+    assert s.battery_level == pytest.approx(31.0)
+    # and the hysteresis still works on the next real frame
+    s.update_base_status(P.RETURNING)
+    assert s.activity == A.RETURNING
+    assert s.is_docked is False
+
+
+def test_sub1_19_with_unknown_previous_is_unknown_not_on_dock():
+    # e.g. HA restart while the robot is returning: no history to disambiguate 19
+    s = _state(A.UNKNOWN)
+    s.update_base_status(P.RETURNING)
+    assert s.activity == A.UNKNOWN
+    assert s.is_docked is False
+    assert s.is_returning is False
+
+
+def test_sub1_10_with_unobserved_sub10_is_unknown():
+    s = _state(A.RETURNING)
+    # hand-built payload: field 3 = {1: 10, 10: 3}
+    s.update_base_status(bytes.fromhex("1a04080a5003"))
+    assert s.activity == A.UNKNOWN
+    assert s.is_docked is False
+    assert s.is_returning is False

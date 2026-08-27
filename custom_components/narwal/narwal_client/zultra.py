@@ -154,10 +154,16 @@ def resolve_activity(sub: dict, tasks: list[DockTask], previous: RobotActivity) 
     if s1 == SUB1_DOCK_ARRIVAL:
         if sub.get(10) == 2:
             return Resolution(RobotActivity.DOCKING, is_returning=True)
-        return _dock(RobotActivity.DOCKED)
+        if sub.get(10) == 1:
+            return _dock(RobotActivity.DOCKED)
+        return Resolution(RobotActivity.UNKNOWN)  # unobserved sub-field 10 value
     if s1 == SUB1_SERVICING:
         if sub.get(18) == 1:
             return _dock(RobotActivity.DOCK_EMPTYING)
+        if previous is RobotActivity.UNKNOWN:
+            # No history (fresh start / reconnect): 19 is ambiguous between
+            # returning and on-dock servicing, so do not guess.
+            return Resolution(RobotActivity.UNKNOWN)
         if previous in _OFF_DOCK:
             return Resolution(RobotActivity.RETURNING, is_returning=True)
         step = active_dock_step(tasks)

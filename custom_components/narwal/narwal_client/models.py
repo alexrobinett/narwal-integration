@@ -115,17 +115,21 @@ class NarwalState:
                 self.working_status = WorkingStatus.UNKNOWN
 
         if self.profile == "zultra":
-            res = resolve_activity(sub, self.dock_tasks, prev_activity)
-            if res.activity is RobotActivity.UNKNOWN and raw_status is not None:
-                _LOGGER.warning(
-                    "Z Ultra: unmapped state sub-fields %s (tasks=%s) — reported as unknown",
-                    self.state_sub_fields, [t.task_id for t in self.dock_tasks],
-                )
-            self.activity = res.activity
-            self.is_docked = res.is_docked
-            self.is_cleaning = res.is_cleaning
-            self.is_paused = res.is_paused
-            self.is_returning = res.is_returning
+            # A frame without a status code (e.g. battery-only) carries no
+            # state information: keep the previous activity and flags so the
+            # sub1=19 hysteresis is not reset (mirrors the legacy guard).
+            if raw_status is not None:
+                res = resolve_activity(sub, self.dock_tasks, prev_activity)
+                if res.activity is RobotActivity.UNKNOWN:
+                    _LOGGER.warning(
+                        "Z Ultra: unmapped state sub-fields %s (tasks=%s) — reported as unknown",
+                        self.state_sub_fields, [t.task_id for t in self.dock_tasks],
+                    )
+                self.activity = res.activity
+                self.is_docked = res.is_docked
+                self.is_cleaning = res.is_cleaning
+                self.is_paused = res.is_paused
+                self.is_returning = res.is_returning
         else:
             # Upstream behaviour: this firmware reuses the PAUSED slot for any
             # active task; sub[2] = is_paused, sub[7] = is_returning. Only
