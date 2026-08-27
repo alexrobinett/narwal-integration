@@ -54,6 +54,9 @@ class NarwalState:
     dock_tasks: list[DockTask] = field(default_factory=list)
     fan_level_raw: int | None = None
     state_sub_fields: dict = field(default_factory=dict)
+    # Base error block (Z Ultra base-status field 1); None while healthy
+    error_code: int | None = None
+    error_message: str | None = None
 
     # Raw protobuf data for fields we don't fully decode yet
     raw_base_status: dict = field(default_factory=dict)
@@ -70,6 +73,7 @@ class NarwalState:
             sub-field 7 = is_returning
             sub-field 10 = dock sub-state (1=docked)
           field 13 (string) = user UUID
+          field 1 (sub-message, Z Ultra only) = base error block, see _parse_error_block
         """
         fields = parse_protobuf_fields(payload)
         self.raw_base_status = fields
@@ -119,6 +123,7 @@ class NarwalState:
             # state information: keep the previous activity and flags so the
             # sub1=19 hysteresis is not reset (mirrors the legacy guard).
             if raw_status is not None:
+                self.error_code, self.error_message = _parse_error_block(fields.get(1))
                 res = resolve_activity(sub, self.dock_tasks, prev_activity)
                 if res.activity is RobotActivity.UNKNOWN:
                     _LOGGER.warning(
@@ -182,6 +187,38 @@ class NarwalState:
             self.elapsed_time = fields[3]
         if 13 in fields:
             self.cleaned_area = fields[13]
+
+
+def _parse_error_block(raw) -> tuple[int | None, str | None]:
+    """Decode the Z Ultra base-status field 1 error block.
+
+    Layout: {1: error_code (varint), 2: severity (varint), 3: text} where
+    the text is a multi-line UTF-8 blob (captured 2026-08-27, leading newline
+    is literal):
+        \n错误码:0x01010036\n等级:Error 级别\n域:基站\n节点:基站驱动板 MCU
+        \n原因:station sewage tank is abnormal when washing mop\n[...]
+    Healthy frames carry field 1 as an empty string; treat that (and a zero
+    code) as "no error". Returns (code, message) or (None, None).
+    """
+    if not isinstance(raw, bytes) or not raw:
+        return None, None
+    try:
+        block = parse_protobuf_fields(raw)
+    except Exception:
+        return None, None
+    code = block.get(1)
+    if not isinstance(code, int) or code == 0:
+        return None, None
+    text = block.get(3)  # str when printable (single line), bytes otherwise
+    if isinstance(text, bytes):
+        text = text.decode("utf-8", errors="replace")
+    if not isinstance(text, str):
+        return code, None
+    if "原因:" in text:
+        message = text.split("原因:", 1)[1].split("\n", 1)[0].strip()
+    else:
+        message = text.strip()
+    return code, message or None
 
 
 @dataclass

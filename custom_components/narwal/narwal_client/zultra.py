@@ -102,6 +102,7 @@ def active_dock_step(tasks: list[DockTask]) -> int | None:
 SUB1_STANDBY = 1
 SUB1_VACUUMING = 2      # upstream calls this PAUSED; on Z Ultra it is an active vacuum clean
 SUB1_MOPPING = 3        # upstream calls this SLEEPING; on Z Ultra it is an active mop clean
+SUB1_COMBO_CLEANING = 4   # "vacuum then mop" clean; sub-field 7 is the phase counter (14/13/8 = working, 2 = heading to dock for a mop wash, 4 = at dock)
 SUB1_DOCK_ARRIVAL = 10  # sub-field 10: 2 = docking, 1 = docked
 SUB1_DOCK_TASKS = 14    # on dock with mop wash/dry running
 SUB1_SERVICING = 19     # transitional: returning, docking contact, dust emptying, dust-bag drying
@@ -149,6 +150,10 @@ def resolve_activity(sub: dict, tasks: list[DockTask], previous: RobotActivity) 
         if paused:
             return Resolution(RobotActivity.PAUSED, is_paused=True)
         return Resolution(RobotActivity.MOPPING, is_cleaning=True)
+    if s1 == SUB1_COMBO_CLEANING:
+        if paused:
+            return Resolution(RobotActivity.PAUSED, is_paused=True)
+        return Resolution(RobotActivity.CLEANING, is_cleaning=True)
     if s1 == SUB1_STANDBY:
         return Resolution(RobotActivity.STANDBY, is_docked=sub.get(3) == 1)
     if s1 == SUB1_DOCK_ARRIVAL:

@@ -83,6 +83,8 @@ class NarwalVacuum(NarwalEntity, StateVacuumEntity):
         state = self.coordinator.data
         if state is None:
             return VacuumActivity.IDLE
+        if state.error_code is not None:
+            return VacuumActivity.ERROR
         if state.activity is RobotActivity.STANDBY and state.is_docked:
             return VacuumActivity.DOCKED
         return ACTIVITY_TO_VACUUM.get(state.activity, VacuumActivity.IDLE)

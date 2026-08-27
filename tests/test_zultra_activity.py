@@ -29,6 +29,11 @@ def _state(previous: A = A.UNKNOWN) -> NarwalState:
         (P.DOCKED_AFTER_RETURN, A.DOCKING, A.DOCKED, True, False),
         # dock servicing resumes after re-dock: same sub as RETURNING but previous was on dock
         (P.DUSTBAG_DRYING, A.DOCKED, A.DOCK_DUSTBAG_DRYING, True, False),
+        # "vacuum then mop" combo clean: sub1=4, sub7 is the phase counter
+        (P.COMBO_STARTING, A.DOCK_DUSTBAG_DRYING, A.CLEANING, False, True),
+        (P.COMBO_CLEANING, A.CLEANING, A.CLEANING, False, True),
+        (P.COMBO_RETURNING_TO_WASH, A.CLEANING, A.CLEANING, False, True),
+        (P.PAUSED_ON_DOCK_WITH_ERROR, A.CLEANING, A.PAUSED, False, False),
     ],
 )
 def test_zultra_activity_from_captured_payloads(payload, previous, activity, docked, cleaning):
@@ -101,3 +106,12 @@ def test_sub1_10_with_unobserved_sub10_is_unknown():
     assert s.activity == A.UNKNOWN
     assert s.is_docked is False
     assert s.is_returning is False
+
+
+def test_combo_clean_paused_by_base_error_sets_is_paused():
+    s = _state(A.CLEANING)
+    s.update_base_status(P.PAUSED_ON_DOCK_WITH_ERROR)
+    assert s.activity == A.PAUSED
+    assert s.is_paused is True
+    assert s.is_cleaning is False
+    assert s.is_docked is False

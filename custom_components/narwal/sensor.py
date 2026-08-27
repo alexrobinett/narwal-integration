@@ -120,6 +120,8 @@ class NarwalStatusSensor(NarwalEntity, SensorEntity):
             "is_paused": state.is_paused,
             "is_returning": state.is_returning,
             "is_docked": state.is_docked,
+            "error_code": f"0x{state.error_code:08x}" if state.error_code is not None else None,
+            "error_message": state.error_message,
         }
 
 
