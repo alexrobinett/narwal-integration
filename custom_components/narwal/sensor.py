@@ -17,27 +17,28 @@ from . import NarwalConfigEntry
 from .const import FAN_SPEED_REVERSE
 from .coordinator import NarwalCoordinator
 from .entity import NarwalEntity
-from .narwal_client import WorkingStatus
+from .narwal_client import RobotActivity
 
 _LOGGER = logging.getLogger(__name__)
 
-STATUS_NAMES = {
-    WorkingStatus.UNKNOWN: "Unknown",
-    WorkingStatus.STANDBY: "Standby",
-    WorkingStatus.PAUSED: "Paused",
-    WorkingStatus.SLEEPING: "Sleeping",
-    WorkingStatus.CLEANING: "Cleaning",
-    WorkingStatus.CLEANING_ALT: "Cleaning",
-    WorkingStatus.RETURNING: "Returning",
-    WorkingStatus.CHARGING: "Charging",
-    WorkingStatus.MOP_WASHING: "Washing Mop",
-    WorkingStatus.MOP_DRYING: "Drying Mop",
-    WorkingStatus.DOCKED: "Docked",
-    WorkingStatus.DUST_COLLECTING: "Emptying Dustbin",
-    WorkingStatus.UPGRADING: "Upgrading",
-    WorkingStatus.SELF_CHECK: "Self Check",
-    WorkingStatus.CHARGED: "Charged",
-    WorkingStatus.ERROR: "Error",
+STATUS_LABELS: dict[RobotActivity, str] = {
+    RobotActivity.UNKNOWN: "Unknown",
+    RobotActivity.STANDBY: "Standby",
+    RobotActivity.SLEEPING: "Sleeping",
+    RobotActivity.CLEANING: "Cleaning",
+    RobotActivity.MOPPING: "Mopping",
+    RobotActivity.PAUSED: "Paused",
+    RobotActivity.RETURNING: "Returning",
+    RobotActivity.DOCKING: "Docking",
+    RobotActivity.DOCKED: "Docked",
+    RobotActivity.CHARGING: "Charging",
+    RobotActivity.DOCK_WASHING: "Washing Mop",
+    RobotActivity.DOCK_DRYING: "Drying Mop",
+    RobotActivity.DOCK_EMPTYING: "Emptying Dustbin",
+    RobotActivity.DOCK_DUSTBAG_DRYING: "Drying Dust Bag",
+    RobotActivity.DOCK_BUSY: "Dock Busy",
+    RobotActivity.UPGRADING: "Upgrading",
+    RobotActivity.ERROR: "Error",
 }
 
 
@@ -87,13 +88,16 @@ class NarwalStatusSensor(NarwalEntity, SensorEntity):
         self._attr_unique_id = f"{coordinator.config_entry.data['device_name']}_status"
 
     @property
+    def available(self) -> bool:
+        state = self.coordinator.data
+        return super().available and state is not None and state.device_reachable
+
+    @property
     def native_value(self) -> str:
         state = self.coordinator.data
         if state is None:
             return "Unknown"
-        if not state.device_reachable:
-            return "Sleeping"
-        return STATUS_NAMES.get(state.working_status, "Unknown")
+        return STATUS_LABELS.get(state.activity, "Unknown")
 
     @property
     def extra_state_attributes(self) -> dict:
@@ -101,7 +105,17 @@ class NarwalStatusSensor(NarwalEntity, SensorEntity):
         if state is None:
             return {}
         return {
+            "activity": state.activity.value,
             "working_status_code": state.working_status.value,
+            "state_sub_fields": {str(k): v for k, v in state.state_sub_fields.items()},
+            "dock_tasks": [
+                {
+                    "id": t.task_id,
+                    "paused": t.paused,
+                    "steps": [{"type": s.step_type, "active": s.active} for s in t.steps],
+                }
+                for t in state.dock_tasks
+            ],
             "is_cleaning": state.is_cleaning,
             "is_paused": state.is_paused,
             "is_returning": state.is_returning,

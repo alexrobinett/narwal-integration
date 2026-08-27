@@ -17,27 +17,28 @@ from . import NarwalConfigEntry
 from .const import CLEAN_MODE_MAP, FAN_SPEED_LIST, FAN_SPEED_MAP, FAN_SPEED_REVERSE
 from .coordinator import NarwalCoordinator
 from .entity import NarwalEntity
-from .narwal_client import CleanMode, NarwalCommandError, WorkingStatus
+from .narwal_client import CleanMode, NarwalCommandError, RobotActivity
 
 _LOGGER = logging.getLogger(__name__)
 
-WORKING_STATUS_TO_ACTIVITY: dict[WorkingStatus, VacuumActivity] = {
-    WorkingStatus.UNKNOWN: VacuumActivity.IDLE,
-    WorkingStatus.STANDBY: VacuumActivity.IDLE,
-    WorkingStatus.PAUSED: VacuumActivity.PAUSED,
-    WorkingStatus.SLEEPING: VacuumActivity.IDLE,
-    WorkingStatus.CLEANING: VacuumActivity.CLEANING,
-    WorkingStatus.CLEANING_ALT: VacuumActivity.CLEANING,
-    WorkingStatus.RETURNING: VacuumActivity.RETURNING,
-    WorkingStatus.CHARGING: VacuumActivity.DOCKED,
-    WorkingStatus.MOP_WASHING: VacuumActivity.DOCKED,
-    WorkingStatus.MOP_DRYING: VacuumActivity.DOCKED,
-    WorkingStatus.DOCKED: VacuumActivity.DOCKED,
-    WorkingStatus.DUST_COLLECTING: VacuumActivity.DOCKED,
-    WorkingStatus.UPGRADING: VacuumActivity.IDLE,
-    WorkingStatus.SELF_CHECK: VacuumActivity.IDLE,
-    WorkingStatus.CHARGED: VacuumActivity.DOCKED,
-    WorkingStatus.ERROR: VacuumActivity.ERROR,
+ACTIVITY_TO_VACUUM: dict[RobotActivity, VacuumActivity] = {
+    RobotActivity.UNKNOWN: VacuumActivity.IDLE,
+    RobotActivity.STANDBY: VacuumActivity.IDLE,
+    RobotActivity.SLEEPING: VacuumActivity.IDLE,
+    RobotActivity.CLEANING: VacuumActivity.CLEANING,
+    RobotActivity.MOPPING: VacuumActivity.CLEANING,
+    RobotActivity.PAUSED: VacuumActivity.PAUSED,
+    RobotActivity.RETURNING: VacuumActivity.RETURNING,
+    RobotActivity.DOCKING: VacuumActivity.RETURNING,
+    RobotActivity.DOCKED: VacuumActivity.DOCKED,
+    RobotActivity.CHARGING: VacuumActivity.DOCKED,
+    RobotActivity.DOCK_WASHING: VacuumActivity.DOCKED,
+    RobotActivity.DOCK_DRYING: VacuumActivity.DOCKED,
+    RobotActivity.DOCK_EMPTYING: VacuumActivity.DOCKED,
+    RobotActivity.DOCK_DUSTBAG_DRYING: VacuumActivity.DOCKED,
+    RobotActivity.DOCK_BUSY: VacuumActivity.DOCKED,
+    RobotActivity.UPGRADING: VacuumActivity.IDLE,
+    RobotActivity.ERROR: VacuumActivity.ERROR,
 }
 
 
@@ -82,10 +83,9 @@ class NarwalVacuum(NarwalEntity, StateVacuumEntity):
         state = self.coordinator.data
         if state is None:
             return VacuumActivity.IDLE
-
-        return WORKING_STATUS_TO_ACTIVITY.get(
-            state.working_status, VacuumActivity.IDLE
-        )
+        if state.activity is RobotActivity.STANDBY and state.is_docked:
+            return VacuumActivity.DOCKED
+        return ACTIVITY_TO_VACUUM.get(state.activity, VacuumActivity.IDLE)
 
     @property
     def fan_speed(self) -> str | None:

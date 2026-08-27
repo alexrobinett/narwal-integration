@@ -7,6 +7,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import NarwalCoordinator
+from .narwal_client.const import profile_for
 
 
 class NarwalEntity(CoordinatorEntity[NarwalCoordinator]):
@@ -20,5 +21,5 @@ class NarwalEntity(CoordinatorEntity[NarwalCoordinator]):
             identifiers={(DOMAIN, coordinator.config_entry.data["device_name"])},
             name=f"Narwal {coordinator.config_entry.data['product_key']}",
             manufacturer="Narwal",
-            model="Freo X Ultra",
+            model="Freo Z Ultra" if profile_for(coordinator.config_entry.data["product_key"]) == "zultra" else "Freo X Ultra",
         )

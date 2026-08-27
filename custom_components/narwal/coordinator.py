@@ -33,8 +33,8 @@ from .narwal_client import (
     NarwalCommandError,
     NarwalConnectionError,
     NarwalState,
+    RobotActivity,
 )
-from .narwal_client.const import WorkingStatus
 from .narwal_client.models import RoomInfo
 
 _LOGGER = logging.getLogger(__name__)
@@ -50,11 +50,8 @@ MAX_CONSECUTIVE_FAILURES = 3
 # which may be 5 min). 50s leaves a small safety margin.
 KEEPALIVE_INTERVAL = timedelta(seconds=50)
 
-IDLE_STATUSES = frozenset({
-    WorkingStatus.SLEEPING,
-    WorkingStatus.CHARGING,
-    WorkingStatus.DOCKED,
-    WorkingStatus.CHARGED,
+IDLE_ACTIVITIES = frozenset({
+    RobotActivity.SLEEPING, RobotActivity.STANDBY, RobotActivity.DOCKED, RobotActivity.CHARGING,
 })
 
 
@@ -274,13 +271,13 @@ class NarwalCoordinator(DataUpdateCoordinator[NarwalState]):
         """
         new_interval = (
             POLL_INTERVAL_IDLE
-            if self.client.state.working_status in IDLE_STATUSES
+            if self.client.state.activity in IDLE_ACTIVITIES
             else POLL_INTERVAL_ACTIVE
         )
         if self.update_interval != new_interval:
             _LOGGER.info(
-                "Poll interval -> %s (status=%s)",
-                new_interval, self.client.state.working_status.name,
+                "Poll interval -> %s (activity=%s)",
+                new_interval, self.client.state.activity.value,
             )
             self.update_interval = new_interval
 
