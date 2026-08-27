@@ -25,6 +25,9 @@ async def async_setup_entry(
     async_add_entities([
         NarwalLocateButton(coordinator),
         NarwalWakeButton(coordinator),
+        NarwalWashMopButton(coordinator),
+        NarwalDryMopButton(coordinator),
+        NarwalEmptyDustbinButton(coordinator),
     ])
 
 
@@ -63,3 +66,44 @@ class NarwalWakeButton(NarwalEntity, ButtonEntity):
         """Send active_robot_publish to wake the vacuum."""
         await self.coordinator.client.notify_active()
         _LOGGER.info("Sent wake (active_robot) notification")
+
+
+class _NarwalDockActionButton(NarwalEntity, ButtonEntity):
+    """Base for base-station maintenance actions; only usable while docked."""
+
+    _suffix = ""
+    _method = ""
+
+    def __init__(self, coordinator: NarwalCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.config_entry.data['device_name']}_{self._suffix}"
+
+    @property
+    def available(self) -> bool:
+        state = self.coordinator.data
+        return super().available and state is not None and state.device_reachable and state.is_docked
+
+    async def async_press(self) -> None:
+        resp = await getattr(self.coordinator.client, self._method)()
+        _LOGGER.info("%s sent (success=%s)", self._suffix, resp.success)
+
+
+class NarwalWashMopButton(_NarwalDockActionButton):
+    _attr_translation_key = "wash_mop"
+    _attr_icon = "mdi:water"
+    _suffix = "wash_mop"
+    _method = "wash_mop"
+
+
+class NarwalDryMopButton(_NarwalDockActionButton):
+    _attr_translation_key = "dry_mop"
+    _attr_icon = "mdi:weather-windy"
+    _suffix = "dry_mop"
+    _method = "dry_mop"
+
+
+class NarwalEmptyDustbinButton(_NarwalDockActionButton):
+    _attr_translation_key = "empty_dustbin"
+    _attr_icon = "mdi:delete-empty"
+    _suffix = "empty_dustbin"
+    _method = "empty_dustbin"

@@ -19,6 +19,8 @@ from .const import (
     MQTT_BROKER,
     MQTT_PORT,
     TOPIC_CMD_ACTIVE_ROBOT,
+    TOPIC_CMD_DRY_MOP,
+    TOPIC_CMD_DUST_GATHERING,
     TOPIC_CMD_EASY_CLEAN,
     TOPIC_CMD_FORCE_END,
     TOPIC_CMD_GET_BASE_STATUS,
@@ -33,6 +35,7 @@ from .const import (
     TOPIC_CMD_SET_MOP_HUMIDITY,
     TOPIC_CMD_START_CLEAN,
     TOPIC_CMD_START_PLAN,
+    TOPIC_CMD_WASH_MOP,
     TOPIC_CMD_YELL,
     TOPIC_ROBOT_BASE_STATUS,
     TOPIC_WORKING_STATUS,
@@ -560,8 +563,25 @@ class NarwalClient:
     async def stop(self) -> CommandResponse:
         return await self.send_command(TOPIC_CMD_FORCE_END)
 
+    async def _fire_and_forget(self, command: str) -> CommandResponse:
+        """Z Ultra supply/* commands never publish a /response; success shows up
+        as a base-status broadcast (upstream issue #5)."""
+        await self.send_command_no_response(command)
+        return CommandResponse(result_code=1, success=True)
+
     async def return_to_base(self) -> CommandResponse:
+        if self.state.profile == "zultra":
+            return await self._fire_and_forget(TOPIC_CMD_RECALL)
         return await self.send_command(TOPIC_CMD_RECALL)
+
+    async def wash_mop(self) -> CommandResponse:
+        return await self._fire_and_forget(TOPIC_CMD_WASH_MOP)
+
+    async def dry_mop(self) -> CommandResponse:
+        return await self._fire_and_forget(TOPIC_CMD_DRY_MOP)
+
+    async def empty_dustbin(self) -> CommandResponse:
+        return await self._fire_and_forget(TOPIC_CMD_DUST_GATHERING)
 
     async def set_fan_speed(self, level: FanLevel) -> CommandResponse:
         extra = _make_protobuf_varint(1, fan_wire_value(self.product_key, level))
