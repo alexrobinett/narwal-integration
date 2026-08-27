@@ -46,6 +46,9 @@
       },
       "cleaned_area": {
         "name": "Cleaned Area (Session)"
+      },
+      "fan_level": {
+        "name": "Fan Level"
       }
     },
     "button": {

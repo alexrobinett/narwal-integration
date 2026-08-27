@@ -182,3 +182,20 @@ ROOM_SUB_TYPE_NAMES: dict[int, str] = {
     14: "Storage Room",
     15: "Other",
 }
+
+
+# Upstream issue #4: the Freo Z sends/reports fan levels 1..4 where the
+# X Ultra uses 0..3. robot_base_status field 26 reports the same wire value.
+SHIFTED_FAN_MODELS = ZULTRA_PRODUCT_KEYS
+
+
+def fan_wire_value(product_key: str, level: FanLevel) -> int:
+    return level.value + 1 if product_key in SHIFTED_FAN_MODELS else level.value
+
+
+def fan_level_from_wire(product_key: str, raw: int) -> FanLevel | None:
+    value = raw - 1 if product_key in SHIFTED_FAN_MODELS else raw
+    try:
+        return FanLevel(value)
+    except ValueError:
+        return None

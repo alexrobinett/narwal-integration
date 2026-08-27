@@ -14,7 +14,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import NarwalConfigEntry
-from .const import CLEAN_MODE_MAP, FAN_SPEED_LIST, FAN_SPEED_MAP
+from .const import CLEAN_MODE_MAP, FAN_SPEED_LIST, FAN_SPEED_MAP, FAN_SPEED_REVERSE
 from .coordinator import NarwalCoordinator
 from .entity import NarwalEntity
 from .narwal_client import CleanMode, NarwalCommandError, WorkingStatus
@@ -89,6 +89,9 @@ class NarwalVacuum(NarwalEntity, StateVacuumEntity):
 
     @property
     def fan_speed(self) -> str | None:
+        level = self.coordinator.client.fan_level
+        if level is not None:
+            return FAN_SPEED_REVERSE.get(level.value)
         return self._last_fan_speed
 
     @property

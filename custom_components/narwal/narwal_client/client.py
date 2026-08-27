@@ -39,6 +39,8 @@ from .const import (
     CleanMode,
     FanLevel,
     MopHumidity,
+    fan_level_from_wire,
+    fan_wire_value,
     profile_for,
 )
 from .models import CommandResponse, NarwalState
@@ -121,6 +123,11 @@ class NarwalClient:
     @property
     def connected(self) -> bool:
         return self._connected.is_set()
+
+    @property
+    def fan_level(self) -> FanLevel | None:
+        raw = self.state.fan_level_raw
+        return None if raw is None else fan_level_from_wire(self.product_key, raw)
 
     def _build_user_payload(self, extra_inner: bytes = b"") -> bytes:
         """Build the user auth protobuf wrapped in Narwal frame (0x01 + length + protobuf).
@@ -470,7 +477,7 @@ class NarwalClient:
             + _make_protobuf_varint(2, passes)
             + _make_protobuf_varint(3, 1 if vacuum_on else 0)
             + _make_protobuf_varint(4, 1 if mop_on else 2)
-            + _make_protobuf_varint(5, fan_level.value)
+            + _make_protobuf_varint(5, fan_wire_value(self.product_key, fan_level))
             + _make_protobuf_varint(6, mop_humidity.value)
             + _make_protobuf_varint(7, 1)
             + _make_protobuf_varint(8, 1)
@@ -554,7 +561,7 @@ class NarwalClient:
         return await self.send_command(TOPIC_CMD_RECALL)
 
     async def set_fan_speed(self, level: FanLevel) -> CommandResponse:
-        extra = _make_protobuf_varint(1, level.value)
+        extra = _make_protobuf_varint(1, fan_wire_value(self.product_key, level))
         return await self.send_command(TOPIC_CMD_SET_FAN_LEVEL, extra)
 
     async def set_mop_humidity(self, level: MopHumidity) -> CommandResponse:

@@ -14,6 +14,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import NarwalConfigEntry
+from .const import FAN_SPEED_REVERSE
 from .coordinator import NarwalCoordinator
 from .entity import NarwalEntity
 from .narwal_client import WorkingStatus
@@ -52,6 +53,7 @@ async def async_setup_entry(
         NarwalStatusSensor(coordinator),
         NarwalElapsedTimeSensor(coordinator),
         NarwalCleanedAreaSensor(coordinator),
+        NarwalFanLevelSensor(coordinator),
     ])
 
 
@@ -145,3 +147,19 @@ class NarwalCleanedAreaSensor(NarwalEntity, SensorEntity):
         if state is None:
             return None
         return state.cleaned_area / 10000.0  # cm² to m²
+
+
+class NarwalFanLevelSensor(NarwalEntity, SensorEntity):
+    """Fan level as reported by the robot (base status field 26)."""
+
+    _attr_translation_key = "fan_level"
+    _attr_icon = "mdi:fan"
+
+    def __init__(self, coordinator: NarwalCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.config_entry.data['device_name']}_fan_level"
+
+    @property
+    def native_value(self) -> str | None:
+        level = self.coordinator.client.fan_level
+        return None if level is None else FAN_SPEED_REVERSE.get(level.value)
