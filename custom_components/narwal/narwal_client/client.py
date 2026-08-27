@@ -39,6 +39,7 @@ from .const import (
     CleanMode,
     FanLevel,
     MopHumidity,
+    profile_for,
 )
 from .models import CommandResponse, NarwalState
 
@@ -93,7 +94,7 @@ class NarwalClient:
         self.broker = broker
         self.port = port
 
-        self.state = NarwalState()
+        self.state = NarwalState(profile=profile_for(product_key))
         self.on_state_update: Callable[[NarwalState], None] | None = None
 
         self._mqtt_username = mqtt_username

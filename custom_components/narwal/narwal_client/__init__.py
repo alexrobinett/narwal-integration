@@ -2,7 +2,7 @@
 
 from .client import NarwalClient, NarwalConnectionError, NarwalCommandError
 from .cloud import NarwalCloud, NarwalCloudError, NarwalAuthError, NarwalCloudSession, NarwalDevice
-from .const import WorkingStatus, FanLevel, MopHumidity, CleanMode
+from .const import WorkingStatus, RobotActivity, FanLevel, MopHumidity, CleanMode
 from .models import NarwalState, CommandResponse, RoomInfo
 
 __all__ = [
@@ -18,6 +18,7 @@ __all__ = [
     "CommandResponse",
     "RoomInfo",
     "WorkingStatus",
+    "RobotActivity",
     "FanLevel",
     "MopHumidity",
     "CleanMode",

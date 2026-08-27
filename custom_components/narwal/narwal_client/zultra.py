@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from .const import LEGACY_ACTIVITY, RobotActivity, WorkingStatus
+
 # Base-station task step types (robot_base_status field 46 → task → step field 1)
 STEP_CLEAN = 3          # params {1: 1=vacuum-only / 2=mop, 2: ?, 3: passes}
 STEP_RETURN = 4         # recall to dock
@@ -94,3 +96,88 @@ def active_dock_step(tasks: list[DockTask]) -> int | None:
     current = max(candidates, key=lambda task: task.task_id)
     last = current.steps[-1]
     return last.step_type if last.step_type in DOCK_STEPS else None
+
+
+# Coarse state codes in robot_base_status field 3 sub-field 1 as observed on the Z Ultra.
+SUB1_STANDBY = 1
+SUB1_VACUUMING = 2      # upstream calls this PAUSED; on Z Ultra it is an active vacuum clean
+SUB1_MOPPING = 3        # upstream calls this SLEEPING; on Z Ultra it is an active mop clean
+SUB1_DOCK_ARRIVAL = 10  # sub-field 10: 2 = docking, 1 = docked
+SUB1_DOCK_TASKS = 14    # on dock with mop wash/dry running
+SUB1_SERVICING = 19     # transitional: returning, docking contact, dust emptying, dust-bag drying
+
+DOCK_STEP_ACTIVITY = {
+    STEP_DUST_EMPTY: RobotActivity.DOCK_EMPTYING,
+    STEP_MOP_WASH: RobotActivity.DOCK_WASHING,
+    STEP_MOP_DRY: RobotActivity.DOCK_DRYING,
+    STEP_DUSTBAG_DRY: RobotActivity.DOCK_DUSTBAG_DRYING,
+}
+
+_OFF_DOCK = frozenset({
+    RobotActivity.CLEANING, RobotActivity.MOPPING, RobotActivity.PAUSED, RobotActivity.RETURNING,
+})
+
+
+@dataclass
+class Resolution:
+    activity: RobotActivity
+    is_docked: bool = False
+    is_cleaning: bool = False
+    is_paused: bool = False
+    is_returning: bool = False
+
+
+def _dock(activity: RobotActivity) -> Resolution:
+    return Resolution(activity=activity, is_docked=True)
+
+
+def resolve_activity(sub: dict, tasks: list[DockTask], previous: RobotActivity) -> Resolution:
+    """Map the Z Ultra state sub-message + task list to a semantic activity.
+
+    `sub` is the parsed field-3 sub-message ({sub_field: int}). `previous` is the
+    last resolved activity; it disambiguates sub1=19, which the robot uses both
+    for "returning to dock" and for "servicing on the dock".
+    """
+    s1 = sub.get(1)
+    paused = sub.get(2) == 1
+
+    if s1 == SUB1_VACUUMING:
+        if paused:
+            return Resolution(RobotActivity.PAUSED, is_paused=True)
+        return Resolution(RobotActivity.CLEANING, is_cleaning=True)
+    if s1 == SUB1_MOPPING:
+        if paused:
+            return Resolution(RobotActivity.PAUSED, is_paused=True)
+        return Resolution(RobotActivity.MOPPING, is_cleaning=True)
+    if s1 == SUB1_STANDBY:
+        return Resolution(RobotActivity.STANDBY, is_docked=sub.get(3) == 1)
+    if s1 == SUB1_DOCK_ARRIVAL:
+        if sub.get(10) == 2:
+            return Resolution(RobotActivity.DOCKING, is_returning=True)
+        return _dock(RobotActivity.DOCKED)
+    if s1 == SUB1_SERVICING:
+        if sub.get(18) == 1:
+            return _dock(RobotActivity.DOCK_EMPTYING)
+        if previous in _OFF_DOCK:
+            return Resolution(RobotActivity.RETURNING, is_returning=True)
+        step = active_dock_step(tasks)
+        return _dock(DOCK_STEP_ACTIVITY.get(step, RobotActivity.DOCK_BUSY))
+    if s1 == SUB1_DOCK_TASKS:
+        step = active_dock_step(tasks)
+        return _dock(DOCK_STEP_ACTIVITY.get(step, RobotActivity.CHARGING))
+
+    # Anything else: fall back to upstream's table if the code exists there.
+    try:
+        legacy = LEGACY_ACTIVITY[WorkingStatus(s1)]
+    except (ValueError, KeyError):
+        return Resolution(RobotActivity.UNKNOWN)
+    if legacy in (RobotActivity.CLEANING,):
+        return Resolution(legacy, is_cleaning=True)
+    if legacy is RobotActivity.RETURNING:
+        return Resolution(legacy, is_returning=True)
+    if legacy is RobotActivity.PAUSED:
+        return Resolution(legacy, is_paused=True)
+    return Resolution(legacy, is_docked=legacy in (
+        RobotActivity.DOCKED, RobotActivity.CHARGING, RobotActivity.DOCK_WASHING,
+        RobotActivity.DOCK_DRYING, RobotActivity.DOCK_EMPTYING,
+    ))

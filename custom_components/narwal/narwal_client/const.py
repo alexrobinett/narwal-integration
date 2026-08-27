@@ -1,6 +1,6 @@
 """Protocol constants, enums, and MQTT topic definitions for Narwal vacuum."""
 
-from enum import IntEnum
+from enum import Enum, IntEnum
 
 MQTT_BROKER = "us-01.mqtt.narwaltech.com"
 MQTT_PORT = 8883
@@ -76,6 +76,66 @@ class WorkingStatus(IntEnum):
     SELF_CHECK = 13
     CHARGED = 14
     ERROR = 99
+
+
+class RobotActivity(str, Enum):
+    """Semantic robot state shared by all profiles; entities read this, not WorkingStatus."""
+
+    UNKNOWN = "unknown"
+    STANDBY = "standby"
+    SLEEPING = "sleeping"
+    CLEANING = "cleaning"
+    MOPPING = "mopping"
+    PAUSED = "paused"
+    RETURNING = "returning"
+    DOCKING = "docking"
+    DOCKED = "docked"
+    CHARGING = "charging"
+    DOCK_WASHING = "dock_washing"
+    DOCK_DRYING = "dock_drying"
+    DOCK_EMPTYING = "dock_emptying"
+    DOCK_DUSTBAG_DRYING = "dock_dustbag_drying"
+    DOCK_BUSY = "dock_busy"
+    UPGRADING = "upgrading"
+    ERROR = "error"
+
+
+# Product keys that use the Freo Z Ultra decoding (see zultra.py).
+ZULTRA_PRODUCT_KEYS = frozenset({"hEA7OEshlx"})
+
+
+def profile_for(product_key: str) -> str:
+    return "zultra" if product_key in ZULTRA_PRODUCT_KEYS else "legacy"
+
+
+LEGACY_ACTIVITY: dict[WorkingStatus, RobotActivity] = {
+    WorkingStatus.UNKNOWN: RobotActivity.UNKNOWN,
+    WorkingStatus.STANDBY: RobotActivity.STANDBY,
+    WorkingStatus.PAUSED: RobotActivity.PAUSED,
+    WorkingStatus.SLEEPING: RobotActivity.SLEEPING,
+    WorkingStatus.CLEANING: RobotActivity.CLEANING,
+    WorkingStatus.CLEANING_ALT: RobotActivity.CLEANING,
+    WorkingStatus.RETURNING: RobotActivity.RETURNING,
+    WorkingStatus.CHARGING: RobotActivity.CHARGING,
+    WorkingStatus.MOP_WASHING: RobotActivity.DOCK_WASHING,
+    WorkingStatus.MOP_DRYING: RobotActivity.DOCK_DRYING,
+    WorkingStatus.DOCKED: RobotActivity.DOCKED,
+    WorkingStatus.DUST_COLLECTING: RobotActivity.DOCK_EMPTYING,
+    WorkingStatus.UPGRADING: RobotActivity.UPGRADING,
+    WorkingStatus.SELF_CHECK: RobotActivity.STANDBY,
+    WorkingStatus.CHARGED: RobotActivity.CHARGING,
+    WorkingStatus.ERROR: RobotActivity.ERROR,
+}
+
+DOCKED_ACTIVITIES = frozenset({
+    RobotActivity.DOCKED, RobotActivity.CHARGING, RobotActivity.DOCK_WASHING,
+    RobotActivity.DOCK_DRYING, RobotActivity.DOCK_EMPTYING,
+    RobotActivity.DOCK_DUSTBAG_DRYING, RobotActivity.DOCK_BUSY,
+})
+OFF_DOCK_ACTIVITIES = frozenset({
+    RobotActivity.CLEANING, RobotActivity.MOPPING, RobotActivity.PAUSED,
+    RobotActivity.RETURNING,
+})
 
 
 class FanLevel(IntEnum):

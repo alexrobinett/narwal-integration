@@ -5,7 +5,10 @@ from __future__ import annotations
 import logging
 import struct
 from dataclasses import dataclass, field
-from .const import ROOM_SUB_TYPE_NAMES, WorkingStatus
+from .const import (
+    DOCKED_ACTIVITIES, LEGACY_ACTIVITY, ROOM_SUB_TYPE_NAMES, RobotActivity, WorkingStatus,
+)
+from .zultra import DockTask, parse_dock_tasks, resolve_activity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -45,6 +48,12 @@ class NarwalState:
     elapsed_time: int = 0
     cleaned_area: int = 0
     device_reachable: bool = False
+    # Decoding profile: "legacy" (X Ultra table) or "zultra" (see zultra.py)
+    profile: str = "legacy"
+    activity: RobotActivity = RobotActivity.UNKNOWN
+    dock_tasks: list[DockTask] = field(default_factory=list)
+    fan_level_raw: int | None = None
+    state_sub_fields: dict = field(default_factory=dict)
 
     # Raw protobuf data for fields we don't fully decode yet
     raw_base_status: dict = field(default_factory=dict)
@@ -86,51 +95,58 @@ class NarwalState:
         # Field 3 = mode/state sub-message
         sub: dict = {}
         prev_status = self.working_status
+        prev_activity = self.activity
         if 3 in fields and isinstance(fields[3], bytes):
             sub = parse_protobuf_fields(fields[3])
-            if 1 in sub and isinstance(sub[1], int):
-                raw_status = sub[1]
-                try:
-                    self.working_status = WorkingStatus(raw_status)
-                except ValueError:
-                    _LOGGER.warning(
-                        "Unknown working_status value: %d, sub-fields: %s",
-                        raw_status, sub,
-                    )
-                    self.working_status = WorkingStatus.UNKNOWN
+        self.state_sub_fields = {k: v for k, v in sub.items() if isinstance(v, int)}
 
-                # Disambiguate raw_status=2: this firmware reuses the
-                # PAUSED slot for any active task. Captured payloads
-                # during scheduled clean: {1: 2, 4: 8/7/3} with no
-                # is_paused flag (sub[2]). Use the explicit flags:
-                #   sub[2] = is_paused  (1 = actually paused)
-                #   sub[7] = is_returning (1 = en route to dock)
-                # Without either flag set, treat as CLEANING.
-                if self.working_status == WorkingStatus.PAUSED:
-                    if sub.get(7, 0) == 1:
-                        self.working_status = WorkingStatus.RETURNING
-                    elif sub.get(2, 0) != 1:
-                        self.working_status = WorkingStatus.CLEANING
+        # Field 26 = fan level as the robot reports it (Z Ultra: 1..4)
+        if isinstance(fields.get(26), int):
+            self.fan_level_raw = fields[26]
 
-        # Derive boolean flags from working_status (always, not just when
-        # field 3 is present) so they stay in sync even if field 3 parsing
-        # fails due to protobuf format variations.
-        self.is_paused = self.working_status == WorkingStatus.PAUSED
-        self.is_cleaning = self.working_status in (
-            WorkingStatus.CLEANING, WorkingStatus.CLEANING_ALT
-        )
-        self.is_returning = self.working_status == WorkingStatus.RETURNING
-        self.is_docked = self.working_status in (
-            WorkingStatus.DOCKED, WorkingStatus.CHARGED,
-            WorkingStatus.CHARGING, WorkingStatus.MOP_WASHING,
-            WorkingStatus.MOP_DRYING, WorkingStatus.DUST_COLLECTING,
-        )
-        # Log state transitions at WARNING so we can diagnose enum
-        # mismapping without asking the user to change log levels.
-        log = _LOGGER.warning if self.working_status != prev_status else _LOGGER.debug
+        # Field 46 = base-station task list
+        self.dock_tasks = parse_dock_tasks(fields.get(46) if isinstance(fields.get(46), bytes) else None)
+
+        raw_status = sub.get(1) if isinstance(sub.get(1), int) else None
+        if raw_status is not None:
+            try:
+                self.working_status = WorkingStatus(raw_status)
+            except ValueError:
+                self.working_status = WorkingStatus.UNKNOWN
+
+        if self.profile == "zultra":
+            res = resolve_activity(sub, self.dock_tasks, prev_activity)
+            if res.activity is RobotActivity.UNKNOWN and raw_status is not None:
+                _LOGGER.warning(
+                    "Z Ultra: unmapped state sub-fields %s (tasks=%s) — reported as unknown",
+                    self.state_sub_fields, [t.task_id for t in self.dock_tasks],
+                )
+            self.activity = res.activity
+            self.is_docked = res.is_docked
+            self.is_cleaning = res.is_cleaning
+            self.is_paused = res.is_paused
+            self.is_returning = res.is_returning
+        else:
+            # Upstream behaviour: this firmware reuses the PAUSED slot for any
+            # active task; sub[2] = is_paused, sub[7] = is_returning. Only
+            # disambiguate when this payload actually carried a status code
+            # (upstream nested this inside the sub[1] check), so a stale PAUSED
+            # is not flipped by a payload that lacks field 3.
+            if raw_status is not None and self.working_status == WorkingStatus.PAUSED:
+                if sub.get(7, 0) == 1:
+                    self.working_status = WorkingStatus.RETURNING
+                elif sub.get(2, 0) != 1:
+                    self.working_status = WorkingStatus.CLEANING
+            self.activity = LEGACY_ACTIVITY.get(self.working_status, RobotActivity.UNKNOWN)
+            self.is_paused = self.working_status == WorkingStatus.PAUSED
+            self.is_cleaning = self.working_status in (WorkingStatus.CLEANING, WorkingStatus.CLEANING_ALT)
+            self.is_returning = self.working_status == WorkingStatus.RETURNING
+            self.is_docked = self.activity in DOCKED_ACTIVITIES
+
+        log = _LOGGER.warning if self.activity != prev_activity else _LOGGER.debug
         log(
-            "State update: status=%s battery=%.1f%% sub_fields=%s",
-            self.working_status.name, self.battery_level, sub,
+            "State update: activity=%s status=%s battery=%.1f%% sub_fields=%s",
+            self.activity.value, self.working_status.name, self.battery_level, self.state_sub_fields,
         )
 
     rooms: list[RoomInfo] = field(default_factory=list)
