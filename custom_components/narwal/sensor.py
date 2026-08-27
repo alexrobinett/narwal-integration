@@ -18,6 +18,7 @@ from .const import FAN_SPEED_REVERSE
 from .coordinator import NarwalCoordinator
 from .entity import NarwalEntity
 from .narwal_client import RobotActivity
+from .narwal_client.const import profile_for
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -49,13 +50,16 @@ async def async_setup_entry(
 ) -> None:
     """Set up Narwal sensor entities."""
     coordinator = entry.runtime_data
-    async_add_entities([
+    entities = [
         NarwalBatterySensor(coordinator),
         NarwalStatusSensor(coordinator),
         NarwalElapsedTimeSensor(coordinator),
         NarwalCleanedAreaSensor(coordinator),
-        NarwalFanLevelSensor(coordinator),
-    ])
+    ]
+    # Field 26 (fan level) has only been confirmed on the Z Ultra
+    if profile_for(coordinator.config_entry.data["product_key"]) == "zultra":
+        entities.append(NarwalFanLevelSensor(coordinator))
+    async_add_entities(entities)
 
 
 class NarwalBatterySensor(NarwalEntity, SensorEntity):

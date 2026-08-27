@@ -61,6 +61,8 @@ class NarwalState:
     # Raw protobuf data for fields we don't fully decode yet
     raw_base_status: dict = field(default_factory=dict)
     raw_working_status: dict = field(default_factory=dict)
+    # (state sub-fields, task ids) combinations already reported as unmapped
+    _warned_unknown: set = field(default_factory=set, repr=False)
 
     def update_base_status(self, payload: bytes) -> None:
         """Update from robot_base_status protobuf.
@@ -77,13 +79,14 @@ class NarwalState:
         """
         fields = parse_protobuf_fields(payload)
         self.raw_base_status = fields
-        _LOGGER.debug(
-            "Parsed base status fields: %s",
-            {
-                k: (v.hex() if isinstance(v, bytes) else v)
-                for k, v in fields.items()
-            },
-        )
+        if _LOGGER.isEnabledFor(logging.DEBUG):
+            _LOGGER.debug(
+                "Parsed base status fields: %s",
+                {
+                    k: (v.hex() if isinstance(v, bytes) else v)
+                    for k, v in fields.items()
+                },
+            )
 
         # Field 2 = battery as IEEE 754 float32 (little-endian fixed32)
         if 2 in fields:
@@ -100,6 +103,7 @@ class NarwalState:
         sub: dict = {}
         prev_status = self.working_status
         prev_activity = self.activity
+        prev_docked = self.is_docked
         if 3 in fields and isinstance(fields[3], bytes):
             sub = parse_protobuf_fields(fields[3])
         self.state_sub_fields = {k: v for k, v in sub.items() if isinstance(v, int)}
@@ -124,12 +128,20 @@ class NarwalState:
             # sub1=19 hysteresis is not reset (mirrors the legacy guard).
             if raw_status is not None:
                 self.error_code, self.error_message = _parse_error_block(fields.get(1))
-                res = resolve_activity(sub, self.dock_tasks, prev_activity)
+                res = resolve_activity(
+                    sub, self.dock_tasks, prev_activity, previous_docked=prev_docked
+                )
                 if res.activity is RobotActivity.UNKNOWN:
-                    _LOGGER.warning(
-                        "Z Ultra: unmapped state sub-fields %s (tasks=%s) — reported as unknown",
-                        self.state_sub_fields, [t.task_id for t in self.dock_tasks],
+                    key = (
+                        tuple(sorted(self.state_sub_fields.items())),
+                        tuple(t.task_id for t in self.dock_tasks),
                     )
+                    if key not in self._warned_unknown:
+                        self._warned_unknown.add(key)
+                        _LOGGER.warning(
+                            "Z Ultra: unmapped state sub-fields %s (tasks=%s) — reported as unknown",
+                            self.state_sub_fields, [t.task_id for t in self.dock_tasks],
+                        )
                 self.activity = res.activity
                 self.is_docked = res.is_docked
                 self.is_cleaning = res.is_cleaning

@@ -33,8 +33,8 @@ from .narwal_client import (
     NarwalCommandError,
     NarwalConnectionError,
     NarwalState,
-    RobotActivity,
 )
+from .narwal_client.const import IDLE_ACTIVITIES
 from .narwal_client.models import RoomInfo
 
 _LOGGER = logging.getLogger(__name__)
@@ -49,11 +49,6 @@ MAX_CONSECUTIVE_FAILURES = 3
 # keepalive on its own timer (independent of the adaptive poll cadence,
 # which may be 5 min). 50s leaves a small safety margin.
 KEEPALIVE_INTERVAL = timedelta(seconds=50)
-
-IDLE_ACTIVITIES = frozenset({
-    RobotActivity.SLEEPING, RobotActivity.DOCKED, RobotActivity.CHARGING,
-})
-
 
 class NarwalCoordinator(DataUpdateCoordinator[NarwalState]):
     """Manages communication with the Narwal vacuum via MQTT."""

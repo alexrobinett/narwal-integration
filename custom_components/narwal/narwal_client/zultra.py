@@ -98,6 +98,20 @@ def active_dock_step(tasks: list[DockTask]) -> int | None:
     return last.step_type if last.step_type in DOCK_STEPS else None
 
 
+def newest_task_last_step(tasks: list[DockTask]) -> int | None:
+    """Return the last step type of the highest-task_id task, paused or not.
+
+    During a combo clean (sub1=4) the newest task's trailing step says where
+    the robot is: STEP_CLEAN/STEP_QUEUED = out cleaning, STEP_RETURN = heading
+    back to the dock, STEP_MOP_WASH/STEP_MOP_DRY = on the dock. A paused task
+    is still the current one (the base error pauses it in place).
+    """
+    candidates = [task for task in tasks if task.steps]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda task: task.task_id).steps[-1].step_type
+
+
 # Coarse state codes in robot_base_status field 3 sub-field 1 as observed on the Z Ultra.
 SUB1_STANDBY = 1
 SUB1_VACUUMING = 2      # upstream calls this PAUSED; on Z Ultra it is an active vacuum clean
@@ -132,12 +146,19 @@ def _dock(activity: RobotActivity) -> Resolution:
     return Resolution(activity=activity, is_docked=True)
 
 
-def resolve_activity(sub: dict, tasks: list[DockTask], previous: RobotActivity) -> Resolution:
+def resolve_activity(
+    sub: dict,
+    tasks: list[DockTask],
+    previous: RobotActivity,
+    *,
+    previous_docked: bool = False,
+) -> Resolution:
     """Map the Z Ultra state sub-message + task list to a semantic activity.
 
     `sub` is the parsed field-3 sub-message ({sub_field: int}). `previous` is the
-    last resolved activity; it disambiguates sub1=19, which the robot uses both
-    for "returning to dock" and for "servicing on the dock".
+    last resolved activity and `previous_docked` the last is_docked flag; together
+    they disambiguate sub1=19, which the robot uses both for "returning to dock"
+    and for "servicing on the dock" (a PAUSED combo clean can be on the dock).
     """
     s1 = sub.get(1)
     paused = sub.get(2) == 1
@@ -151,6 +172,15 @@ def resolve_activity(sub: dict, tasks: list[DockTask], previous: RobotActivity) 
             return Resolution(RobotActivity.PAUSED, is_paused=True)
         return Resolution(RobotActivity.MOPPING, is_cleaning=True)
     if s1 == SUB1_COMBO_CLEANING:
+        last = newest_task_last_step(tasks)
+        if last == STEP_RETURN:
+            if paused:
+                return Resolution(RobotActivity.PAUSED, is_paused=True)
+            return Resolution(RobotActivity.RETURNING, is_returning=True)
+        if last in (STEP_MOP_WASH, STEP_MOP_DRY):
+            if paused:
+                return Resolution(RobotActivity.PAUSED, is_docked=True, is_paused=True)
+            return _dock(DOCK_STEP_ACTIVITY[last])
         if paused:
             return Resolution(RobotActivity.PAUSED, is_paused=True)
         return Resolution(RobotActivity.CLEANING, is_cleaning=True)
@@ -169,7 +199,7 @@ def resolve_activity(sub: dict, tasks: list[DockTask], previous: RobotActivity) 
             # No history (fresh start / reconnect): 19 is ambiguous between
             # returning and on-dock servicing, so do not guess.
             return Resolution(RobotActivity.UNKNOWN)
-        if previous in _OFF_DOCK:
+        if previous in _OFF_DOCK and not previous_docked:
             return Resolution(RobotActivity.RETURNING, is_returning=True)
         step = active_dock_step(tasks)
         return _dock(DOCK_STEP_ACTIVITY.get(step, RobotActivity.DOCK_BUSY))

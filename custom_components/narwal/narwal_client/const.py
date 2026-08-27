@@ -136,6 +136,10 @@ OFF_DOCK_ACTIVITIES = frozenset({
     RobotActivity.CLEANING, RobotActivity.MOPPING, RobotActivity.PAUSED,
     RobotActivity.RETURNING,
 })
+# Activities during which the coordinator only needs keepalive polling
+IDLE_ACTIVITIES = frozenset({
+    RobotActivity.SLEEPING, RobotActivity.DOCKED, RobotActivity.CHARGING,
+})
 
 
 class FanLevel(IntEnum):

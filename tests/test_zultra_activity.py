@@ -1,3 +1,5 @@
+import logging
+
 import pytest
 
 from narwal_client.const import RobotActivity as A
@@ -32,8 +34,10 @@ def _state(previous: A = A.UNKNOWN) -> NarwalState:
         # "vacuum then mop" combo clean: sub1=4, sub7 is the phase counter
         (P.COMBO_STARTING, A.DOCK_DUSTBAG_DRYING, A.CLEANING, False, True),
         (P.COMBO_CLEANING, A.CLEANING, A.CLEANING, False, True),
-        (P.COMBO_RETURNING_TO_WASH, A.CLEANING, A.CLEANING, False, True),
-        (P.PAUSED_ON_DOCK_WITH_ERROR, A.CLEANING, A.PAUSED, False, False),
+        # newest task's last step is STEP_RETURN: heading back for a mop wash
+        (P.COMBO_RETURNING_TO_WASH, A.CLEANING, A.RETURNING, False, False),
+        # newest task's last step is STEP_MOP_WASH and the task is paused: on the dock
+        (P.PAUSED_ON_DOCK_WITH_ERROR, A.CLEANING, A.PAUSED, True, False),
     ],
 )
 def test_zultra_activity_from_captured_payloads(payload, previous, activity, docked, cleaning):
@@ -114,4 +118,53 @@ def test_combo_clean_paused_by_base_error_sets_is_paused():
     assert s.activity == A.PAUSED
     assert s.is_paused is True
     assert s.is_cleaning is False
+    assert s.is_docked is True
+    assert s.is_returning is False
+
+
+def test_combo_clean_returning_to_wash_sets_is_returning():
+    s = _state(A.CLEANING)
+    s.update_base_status(P.COMBO_RETURNING_TO_WASH)
+    assert s.activity == A.RETURNING
+    assert s.is_returning is True
     assert s.is_docked is False
+    assert s.is_cleaning is False
+    assert s.is_paused is False
+
+
+def test_paused_on_dock_then_servicing_is_dock_activity_not_returning():
+    # combo clean paused on the dock (error), then sub1=19 servicing: the robot
+    # never left the dock, so the sub1=19 hysteresis must not report RETURNING
+    s = _state(A.CLEANING)
+    s.update_base_status(P.PAUSED_ON_DOCK_WITH_ERROR)
+    assert s.activity == A.PAUSED
+    assert s.is_docked is True
+    s.update_base_status(P.DUSTBAG_DRYING)
+    assert s.activity == A.DOCK_DUSTBAG_DRYING
+    assert s.is_docked is True
+    assert s.is_returning is False
+
+
+def test_cleaning_off_dock_then_servicing_is_still_returning():
+    s = _state(A.DOCK_DUSTBAG_DRYING)
+    s.update_base_status(P.VACUUM_CLEANING_FAN_MAX)
+    assert s.activity == A.CLEANING
+    assert s.is_docked is False
+    s.update_base_status(P.RETURNING)
+    assert s.activity == A.RETURNING
+    assert s.is_docked is False
+    assert s.is_returning is True
+
+
+def test_unknown_state_warning_is_logged_once_per_combination(caplog):
+    s = NarwalState(profile="zultra")
+    with caplog.at_level(logging.WARNING, logger="narwal_client.models"):
+        for _ in range(5):
+            # sub1=19 with no history resolves UNKNOWN every time
+            s.update_base_status(P.DUSTBAG_DRYING)
+            assert s.activity == A.UNKNOWN
+    unmapped = [
+        r for r in caplog.records
+        if r.levelname == "WARNING" and "unmapped state sub-fields" in r.getMessage()
+    ]
+    assert len(unmapped) == 1

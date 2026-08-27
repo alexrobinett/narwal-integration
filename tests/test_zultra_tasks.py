@@ -1,7 +1,8 @@
 from narwal_client.models import parse_protobuf_fields
 from narwal_client.zultra import (
-    STEP_DUSTBAG_DRY, STEP_DUST_EMPTY, STEP_MOP_DRY, STEP_MOP_WASH, STEP_SESSION,
-    active_dock_step, parse_dock_tasks,
+    STEP_CLEAN, STEP_DUSTBAG_DRY, STEP_DUST_EMPTY, STEP_MOP_DRY, STEP_MOP_WASH,
+    STEP_QUEUED, STEP_RETURN, STEP_SESSION, active_dock_step, newest_task_last_step,
+    parse_dock_tasks,
 )
 from tests.fixtures import zultra_payloads as P
 
@@ -48,3 +49,13 @@ def test_active_dock_step_prefers_last_step_of_unpaused_task():
 def test_queued_and_clean_tasks_are_not_dock_steps():
     assert active_dock_step(parse_dock_tasks(_field46(P.VACUUM_CLEANING_FAN_MAX))) is None
     assert active_dock_step(parse_dock_tasks(_field46(P.STANDBY_DOCKED))) is None
+
+
+def test_newest_task_last_step_uses_highest_task_id_paused_or_not():
+    assert newest_task_last_step(parse_dock_tasks(_field46(P.COMBO_STARTING))) == STEP_QUEUED
+    assert newest_task_last_step(parse_dock_tasks(_field46(P.COMBO_CLEANING))) == STEP_CLEAN
+    assert newest_task_last_step(parse_dock_tasks(_field46(P.COMBO_RETURNING_TO_WASH))) == STEP_RETURN
+    # task 984 is paused here but is still the newest task
+    assert newest_task_last_step(parse_dock_tasks(_field46(P.PAUSED_ON_DOCK_WITH_ERROR))) == STEP_MOP_WASH
+    assert newest_task_last_step(parse_dock_tasks(_field46(P.STANDBY_DOCKED))) is None
+    assert newest_task_last_step([]) is None

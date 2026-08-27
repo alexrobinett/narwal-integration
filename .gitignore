@@ -37,3 +37,6 @@ __pycache__/
 .pytest_cache/
 
 .superpowers/
+
+# Live MQTT capture output (contains the owner's identifiers)
+capture.jsonl

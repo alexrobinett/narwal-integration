@@ -11,6 +11,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from . import NarwalConfigEntry
 from .coordinator import NarwalCoordinator
 from .entity import NarwalEntity
+from .narwal_client.const import profile_for
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -22,13 +23,18 @@ async def async_setup_entry(
 ) -> None:
     """Set up Narwal button entities."""
     coordinator = entry.runtime_data
-    async_add_entities([
+    entities = [
         NarwalLocateButton(coordinator),
         NarwalWakeButton(coordinator),
-        NarwalWashMopButton(coordinator),
-        NarwalDryMopButton(coordinator),
-        NarwalEmptyDustbinButton(coordinator),
-    ])
+    ]
+    # Dock-action payloads have only been confirmed on the Z Ultra
+    if profile_for(coordinator.config_entry.data["product_key"]) == "zultra":
+        entities += [
+            NarwalWashMopButton(coordinator),
+            NarwalDryMopButton(coordinator),
+            NarwalEmptyDustbinButton(coordinator),
+        ]
+    async_add_entities(entities)
 
 
 class NarwalLocateButton(NarwalEntity, ButtonEntity):
