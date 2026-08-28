@@ -624,6 +624,27 @@ class NarwalClient:
     async def get_consumable_info(self) -> CommandResponse:
         return await self.send_command(TOPIC_CMD_GET_CONSUMABLE)
 
+    async def fetch_consumables(self) -> bool:
+        """Refresh state.consumables_* from consumable/get_consumable_info.
+
+        The response carries no result varint: the after-frame is just
+        {1: ConsumableInfo} (a bare `0a00` when nothing needs attention), so
+        CommandResponse.success is False and .data empty for this topic. The
+        block is read from .raw instead. Returns True when the robot
+        answered; a timeout leaves the lists untouched and returns False.
+        """
+        try:
+            resp = await self.send_command(TOPIC_CMD_GET_CONSUMABLE)
+        except NarwalCommandError:
+            _LOGGER.debug("Consumable info request timed out")
+            return False
+        self.state.update_consumable_info(resp.raw)
+        _LOGGER.info(
+            "Consumables needing attention: maintain=%s replace=%s",
+            self.state.consumables_maintain, self.state.consumables_replace,
+        )
+        return True
+
     async def get_map(self) -> CommandResponse:
         """Fetch the current map from the vacuum."""
         return await self.send_command(TOPIC_CMD_GET_MAP, timeout=15.0)

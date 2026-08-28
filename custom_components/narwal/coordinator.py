@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from datetime import timedelta
 
 from homeassistant.config_entries import ConfigEntry
@@ -50,6 +51,9 @@ MAX_CONSECUTIVE_FAILURES = 3
 # which may be 5 min). 50s leaves a small safety margin.
 KEEPALIVE_INTERVAL = timedelta(seconds=50)
 
+# consumable/get_consumable_info only changes with use; ask rarely.
+CONSUMABLES_INTERVAL = timedelta(hours=6)
+
 class NarwalCoordinator(DataUpdateCoordinator[NarwalState]):
     """Manages communication with the Narwal vacuum via MQTT."""
 
@@ -67,6 +71,8 @@ class NarwalCoordinator(DataUpdateCoordinator[NarwalState]):
         self.selected_clean_mode: CleanMode = CleanMode.VACUUM_AND_MOP
         self._consecutive_failures: int = 0
         self._keepalive_unsub = None
+        # time.monotonic() of the last answered consumables request
+        self._consumables_checked_at: float | None = None
 
         if CONF_ACCESS_TOKEN in entry.data:
             self._setup_from_cloud_config(entry)
@@ -127,8 +133,10 @@ class NarwalCoordinator(DataUpdateCoordinator[NarwalState]):
         await self.client.connect()
         self.client.on_state_update = self._on_state_update
 
+        status_ok = False
         try:
             await self.client.request_status_update()
+            status_ok = True
         except NarwalCommandError:
             _LOGGER.warning("Initial status request timed out — vacuum may be asleep")
 
@@ -137,6 +145,10 @@ class NarwalCoordinator(DataUpdateCoordinator[NarwalState]):
             self._persist_rooms_cache()
         except NarwalCommandError:
             _LOGGER.warning("Initial room fetch timed out — will retry on next poll")
+
+        # Only when the robot is awake; otherwise the first responsive poll does it
+        if status_ok:
+            await self._maybe_fetch_consumables()
 
         state = self.client.state
         _LOGGER.info(
@@ -169,6 +181,24 @@ class NarwalCoordinator(DataUpdateCoordinator[NarwalState]):
         new_data = {**self.config_entry.data, CONF_ROOMS_CACHE: cache}
         self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
         _LOGGER.info("Cached %d rooms to config entry", len(rooms))
+
+    async def _maybe_fetch_consumables(self) -> None:
+        """Refresh the consumable lists at most every CONSUMABLES_INTERVAL.
+
+        Z Ultra only (the response layout was sniffed on that model). The
+        timestamp is only advanced when the robot answered, so a sleeping
+        robot is retried on the next responsive poll instead of in 6 h.
+        """
+        if self.client.state.profile != "zultra" or not self.client.connected:
+            return
+        last = self._consumables_checked_at
+        if last is not None and time.monotonic() - last < CONSUMABLES_INTERVAL.total_seconds():
+            return
+        try:
+            if await self.client.fetch_consumables():
+                self._consumables_checked_at = time.monotonic()
+        except Exception:
+            _LOGGER.debug("Consumables fetch failed", exc_info=True)
 
     def _start_keepalive(self) -> None:
         """Schedule notify_active every 50s to stay on the vacuum's push list."""
@@ -322,6 +352,8 @@ class NarwalCoordinator(DataUpdateCoordinator[NarwalState]):
                     self._persist_rooms_cache()
                 except NarwalCommandError:
                     _LOGGER.debug("Room re-fetch still failing — will retry next poll")
+            if status_ok:
+                await self._maybe_fetch_consumables()
         else:
             self._consecutive_failures += 1
             _LOGGER.warning("MQTT not connected, failure count: %d", self._consecutive_failures)

@@ -55,6 +55,32 @@
       },
       "current_room": {
         "name": "Current Room"
+      },
+      "dust_bag_health": {
+        "name": "Dust Bag Health"
+      },
+      "mop_humidity": {
+        "name": "Mop Humidity"
+      },
+      "consumables_attention": {
+        "name": "Consumables Needing Attention"
+      }
+    },
+    "binary_sensor": {
+      "dust_box": {
+        "name": "Dust Box"
+      },
+      "dust_bag": {
+        "name": "Dust Bag"
+      },
+      "clean_water_tank": {
+        "name": "Clean Water Tank"
+      },
+      "sewage_tank": {
+        "name": "Sewage Tank"
+      },
+      "station_bag": {
+        "name": "Station Bag"
       }
     },
     "button": {
@@ -72,6 +98,9 @@
       },
       "empty_dustbin": {
         "name": "Empty Dustbin"
+      },
+      "end_dock_task": {
+        "name": "End Dock Task"
       }
     },
     "camera": {

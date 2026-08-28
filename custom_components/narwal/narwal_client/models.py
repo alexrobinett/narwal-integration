@@ -62,6 +62,23 @@ class NarwalState:
     clean_progress: float | None = None
     cleaned_area_m2: float | None = None
     current_room_id: int | None = None
+    # Z Ultra base-status station fields (sjmotew PROTOCOL.md §7): enums,
+    # 1 = normal; None when the frame lacks the field (21 is never sent by
+    # the Freo Z Ultra). Read in _read_station_fields.
+    dust_box_state: int | None = None
+    dust_bag_state: int | None = None
+    clean_water_state: int | None = None
+    sewage_state: int | None = None
+    station_bag_state: int | None = None
+    # Field 35: station/dust-bag health %, rounded to 1 dp
+    dust_bag_health: float | None = None
+    # Field 29: mop humidity as reported (1-based on the Z Ultra: 1 Dry,
+    # 2 Normal, 3 Wet — see MOP_HUMIDITY_NAMES_ZULTRA)
+    mop_humidity_raw: int | None = None
+    # consumable/get_consumable_info item ids (CONSUMABLE_*_NAMES); empty
+    # until fetched and while nothing needs attention
+    consumables_maintain: list[int] = field(default_factory=list)
+    consumables_replace: list[int] = field(default_factory=list)
 
     # Raw protobuf data for fields we don't fully decode yet
     raw_base_status: dict = field(default_factory=dict)
@@ -128,6 +145,7 @@ class NarwalState:
                 self.working_status = WorkingStatus.UNKNOWN
 
         if self.profile == "zultra":
+            self._read_station_fields(fields)
             # A frame without a status code (e.g. battery-only) carries no
             # state information: keep the previous activity and flags so the
             # sub1=19 hysteresis is not reset (mirrors the legacy guard).
@@ -174,6 +192,43 @@ class NarwalState:
             "State update: activity=%s status=%s battery=%.1f%% sub_fields=%s",
             self.activity.value, self.working_status.name, self.battery_level, self.state_sub_fields,
         )
+
+    def _read_station_fields(self, fields: dict) -> None:
+        """Z Ultra station/consumable fields of robot_base_status.
+
+        Every frame captured on 2026-08-27 (19k) carried 20/23/24/29/35/39,
+        so an absent field is reported as None rather than kept from the
+        previous frame. Field 24 was 2 for the whole "sewage tank abnormal"
+        error and 23 was 2 while the clean-water tank was pulled.
+        """
+
+        def varint(num: int) -> int | None:
+            val = fields.get(num)
+            return val if isinstance(val, int) else None
+
+        self.dust_box_state = varint(20)
+        self.dust_bag_state = varint(21)
+        self.clean_water_state = varint(23)
+        self.sewage_state = varint(24)
+        self.station_bag_state = varint(39)
+        health = _fixed32_to_float(fields.get(35))
+        self.dust_bag_health = None if health is None else round(health, 1)
+        self.mop_humidity_raw = varint(29)
+
+    def update_consumable_info(self, payload: bytes) -> None:
+        """Update the consumable lists from a consumable/get_consumable_info response.
+
+        Layout (sniffed 2026-08-27): {1: ConsumableInfo{1: maintainItems,
+        2: replaceItems}} with both sub-fields packed varints of item ids.
+        The healthy answer is a bare `0a00`; that, an empty payload, or a
+        missing sub-field yields an empty list. `payload` may be the whole
+        app payload: the echoed auth fields precede the tail and the
+        last-wins parser resolves field 1 to the consumable block.
+        """
+        info = _len_field_bytes(parse_protobuf_fields(payload).get(1)) if payload else b""
+        sub = parse_protobuf_fields(info) if info else {}
+        self.consumables_maintain = _packed_varints(sub.get(1))
+        self.consumables_replace = _packed_varints(sub.get(2))
 
     rooms: list[RoomInfo] = field(default_factory=list)
 
@@ -255,6 +310,34 @@ def _fixed32_to_float(raw) -> float | None:
         return struct.unpack('<f', struct.pack('<I', raw))[0]
     except struct.error:
         return None
+
+
+def _len_field_bytes(raw) -> bytes:
+    """Raw bytes of a LEN field; undo the parser's printable-text decode.
+
+    parse_protobuf_fields returns a str when the bytes decode as printable
+    UTF-8 (e.g. packed ids >= 0x20), so the exact inverse is a UTF-8 encode.
+    """
+    if isinstance(raw, bytes):
+        return raw
+    if isinstance(raw, str):
+        return raw.encode("utf-8")
+    return b""
+
+
+def _packed_varints(raw) -> list[int]:
+    """Decode a packed repeated varint field (bytes or parser str) to ints."""
+    values: list[int] = []
+    val = 0
+    shift = 0
+    for b in _len_field_bytes(raw):
+        val |= (b & 0x7F) << shift
+        shift += 7
+        if not b & 0x80:
+            values.append(val)
+            val = 0
+            shift = 0
+    return values  # a trailing incomplete varint is dropped
 
 
 def _parse_error_block(raw) -> tuple[int | None, str | None]:

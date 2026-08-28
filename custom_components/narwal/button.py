@@ -33,6 +33,7 @@ async def async_setup_entry(
             NarwalWashMopButton(coordinator),
             NarwalDryMopButton(coordinator),
             NarwalEmptyDustbinButton(coordinator),
+            NarwalEndDockTaskButton(coordinator),
         ]
     async_add_entities(entities)
 
@@ -113,3 +114,36 @@ class NarwalEmptyDustbinButton(_NarwalDockActionButton):
     _attr_icon = "mdi:delete-empty"
     _suffix = "empty_dustbin"
     _method = "empty_dustbin"
+
+
+class NarwalEndDockTaskButton(NarwalEntity, ButtonEntity):
+    """End the running base-station task (the app's "End mop washing/drying").
+
+    Sends task/force_end as a bare auth frame; the robot answers result 1
+    when a task was ended and 2 when there was nothing to end (sniffed
+    2026-08-27). Only available while base status field 46 lists a task.
+    """
+
+    _attr_translation_key = "end_dock_task"
+    _attr_icon = "mdi:stop-circle-outline"
+
+    def __init__(self, coordinator: NarwalCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.config_entry.data['device_name']}_end_dock_task"
+
+    @property
+    def available(self) -> bool:
+        state = self.coordinator.data
+        return (
+            super().available
+            and state is not None
+            and state.device_reachable
+            and bool(state.dock_tasks)
+        )
+
+    async def async_press(self) -> None:
+        resp = await self.coordinator.client.stop()
+        if resp.result_code == 2:
+            _LOGGER.warning("End Dock Task: the robot reports nothing to end (result 2)")
+        else:
+            _LOGGER.info("End Dock Task sent (result=%s)", resp.result_code)

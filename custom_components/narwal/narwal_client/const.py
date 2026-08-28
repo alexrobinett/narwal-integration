@@ -158,6 +158,42 @@ class MopHumidity(IntEnum):
     WET = 2
 
 
+# robot_base_status field 29 on the Freo Z Ultra reports the mop humidity
+# 1-based (like the fan level); MopHumidity above is the 0-based command enum.
+MOP_HUMIDITY_NAMES_ZULTRA: dict[int, str] = {1: "Dry", 2: "Normal", 3: "Wet"}
+
+
+# consumable/get_consumable_info item ids (sjmotew PROTOCOL.md):
+# ConsumableInfo{1: maintainItems, 2: replaceItems}, both packed varints.
+CONSUMABLE_MAINTAIN_NAMES: dict[int, str] = {
+    1: "Dust box",
+    2: "Dust filter",
+    4: "Wash ribs",
+    6: "Universal wheel",
+    7: "Cliff sensor",
+    8: "Side distance sensor",
+    9: "Water-tank sponge",
+    10: "Anti-winding brush",
+    11: "Smart-module sponge",
+    20: "Dust container",
+}
+CONSUMABLE_REPLACE_NAMES: dict[int, str] = {
+    1: "Dust filter",
+    2: "Mop",
+    3: "Side brush",
+    4: "Clear-water filter",
+    5: "Roller brush",
+    6: "Detergent",
+    7: "Smart-module filter",
+    8: "Dust bag",
+    20: "Station bag",
+    21: "Silver ions",
+    22: "Curing agent",
+    23: "Heavy detergent",
+    24: "Inner dust box",
+}
+
+
 class CleanMode(IntEnum):
     VACUUM_AND_MOP = 1
     VACUUM_THEN_MOP = 2

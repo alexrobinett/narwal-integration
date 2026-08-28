@@ -4,7 +4,14 @@ from homeassistant.const import Platform
 
 DOMAIN = "narwal"
 
-PLATFORMS = [Platform.VACUUM, Platform.SENSOR, Platform.BUTTON, Platform.CAMERA, Platform.SELECT]
+PLATFORMS = [
+    Platform.VACUUM,
+    Platform.SENSOR,
+    Platform.BINARY_SENSOR,
+    Platform.BUTTON,
+    Platform.CAMERA,
+    Platform.SELECT,
+]
 
 # Config entry data keys
 CONF_EMAIL = "email"

@@ -18,7 +18,12 @@ from .const import FAN_SPEED_REVERSE
 from .coordinator import NarwalCoordinator
 from .entity import NarwalEntity
 from .narwal_client import RobotActivity
-from .narwal_client.const import profile_for
+from .narwal_client.const import (
+    CONSUMABLE_MAINTAIN_NAMES,
+    CONSUMABLE_REPLACE_NAMES,
+    MOP_HUMIDITY_NAMES_ZULTRA,
+    profile_for,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -62,6 +67,10 @@ async def async_setup_entry(
         entities.append(NarwalFanLevelSensor(coordinator))
         entities.append(NarwalCleanProgressSensor(coordinator))
         entities.append(NarwalCurrentRoomSensor(coordinator))
+        # base status fields 35/29 and consumable/get_consumable_info
+        entities.append(NarwalDustBagHealthSensor(coordinator))
+        entities.append(NarwalMopHumiditySensor(coordinator))
+        entities.append(NarwalConsumablesSensor(coordinator))
     async_add_entities(entities)
 
 
@@ -233,3 +242,81 @@ class NarwalCurrentRoomSensor(NarwalEntity, SensorEntity):
     def extra_state_attributes(self) -> dict:
         state = self.coordinator.data
         return {"room_id": None if state is None else state.current_room_id}
+
+
+class NarwalDustBagHealthSensor(NarwalEntity, SensorEntity):
+    """Station dust-bag health in percent (base status field 35)."""
+
+    _attr_translation_key = "dust_bag_health"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_icon = "mdi:heart-pulse"
+
+    def __init__(self, coordinator: NarwalCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.config_entry.data['device_name']}_dust_bag_health"
+
+    @property
+    def native_value(self) -> float | None:
+        state = self.coordinator.data
+        return None if state is None else state.dust_bag_health
+
+
+class NarwalMopHumiditySensor(NarwalEntity, SensorEntity):
+    """Mop humidity as reported by the robot (base status field 29, 1-based)."""
+
+    _attr_translation_key = "mop_humidity"
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = list(MOP_HUMIDITY_NAMES_ZULTRA.values())
+    _attr_icon = "mdi:water-percent"
+
+    def __init__(self, coordinator: NarwalCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.config_entry.data['device_name']}_mop_humidity"
+
+    @property
+    def native_value(self) -> str | None:
+        state = self.coordinator.data
+        if state is None or state.mop_humidity_raw is None:
+            return None
+        # an unmapped value must not be returned: ENUM sensors reject it
+        return MOP_HUMIDITY_NAMES_ZULTRA.get(state.mop_humidity_raw)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        state = self.coordinator.data
+        return {"raw": None if state is None else state.mop_humidity_raw}
+
+
+class NarwalConsumablesSensor(NarwalEntity, SensorEntity):
+    """Number of consumables the robot says need maintenance or replacement."""
+
+    _attr_translation_key = "consumables_attention"
+    _attr_icon = "mdi:wrench-clock"
+
+    def __init__(self, coordinator: NarwalCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = (
+            f"{coordinator.config_entry.data['device_name']}_consumables_attention"
+        )
+
+    @property
+    def native_value(self) -> int | None:
+        state = self.coordinator.data
+        if state is None:
+            return None
+        return len(state.consumables_maintain) + len(state.consumables_replace)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        state = self.coordinator.data
+        if state is None:
+            return {"maintain": [], "replace": []}
+        return {
+            "maintain": [
+                CONSUMABLE_MAINTAIN_NAMES.get(i, f"Item {i}") for i in state.consumables_maintain
+            ],
+            "replace": [
+                CONSUMABLE_REPLACE_NAMES.get(i, f"Item {i}") for i in state.consumables_replace
+            ],
+        }
