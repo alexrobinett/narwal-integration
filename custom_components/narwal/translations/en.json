@@ -49,6 +49,12 @@
       },
       "fan_level": {
         "name": "Fan Level"
+      },
+      "clean_progress": {
+        "name": "Clean Progress"
+      },
+      "current_room": {
+        "name": "Current Room"
       }
     },
     "button": {

@@ -57,6 +57,11 @@ class NarwalState:
     # Base error block (Z Ultra base-status field 1); None while healthy
     error_code: int | None = None
     error_message: str | None = None
+    # Z Ultra working_status decode (see update_working_status); None until
+    # the first frame of a clean has been seen
+    clean_progress: float | None = None
+    cleaned_area_m2: float | None = None
+    current_room_id: int | None = None
 
     # Raw protobuf data for fields we don't fully decode yet
     raw_base_status: dict = field(default_factory=dict)
@@ -195,10 +200,61 @@ class NarwalState:
         fields = parse_protobuf_fields(payload)
         self.raw_working_status = fields
 
+        prev_elapsed = self.elapsed_time
         if 3 in fields:
             self.elapsed_time = fields[3]
         if 13 in fields:
             self.cleaned_area = fields[13]
+
+        if self.profile != "zultra":
+            return
+
+        # Z Ultra layout (captured 2026-08-27, verified over three cleans):
+        #   field 1 (fixed32 float32) = progress %, field 2 (fixed32 float32)
+        #   = cleaned area m², field 3 (varint) = elapsed s, field 6 (varint)
+        #   = id of the room being cleaned. Fields 1/2/3/6 are absent when no
+        #   clean is running; field 13 is the constant totalDryStationBagTime
+        #   (18000), NOT an area.
+        if 3 not in fields:
+            # Idle frame: latch the last session's progress/area/elapsed, but
+            # the robot is not in any room.
+            self.current_room_id = None
+            return
+
+        if self.elapsed_time < prev_elapsed:
+            # Elapsed went backwards → a new clean started; the first frames
+            # of a clean carry no progress/area yet, so zero them explicitly.
+            self.clean_progress = 0.0
+            self.cleaned_area_m2 = 0.0
+
+        progress = _fixed32_to_float(fields.get(1))
+        if progress is not None:
+            self.clean_progress = progress
+        area = _fixed32_to_float(fields.get(2))
+        if area is not None:
+            self.cleaned_area_m2 = round(area, 2)
+        room = fields.get(6)
+        self.current_room_id = room if isinstance(room, int) else None
+
+    @property
+    def current_room_name(self) -> str | None:
+        """Display name of the room currently being cleaned (Z Ultra), or None."""
+        if self.current_room_id is None:
+            return None
+        for room in self.rooms:
+            if room.room_id == self.current_room_id:
+                return room.display_name
+        return None
+
+
+def _fixed32_to_float(raw) -> float | None:
+    """Reinterpret a fixed32 field (parsed as int) as an IEEE 754 float32."""
+    if not isinstance(raw, int):
+        return None
+    try:
+        return struct.unpack('<f', struct.pack('<I', raw))[0]
+    except struct.error:
+        return None
 
 
 def _parse_error_block(raw) -> tuple[int | None, str | None]:

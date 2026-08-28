@@ -56,9 +56,12 @@ async def async_setup_entry(
         NarwalElapsedTimeSensor(coordinator),
         NarwalCleanedAreaSensor(coordinator),
     ]
-    # Field 26 (fan level) has only been confirmed on the Z Ultra
+    # Field 26 (fan level) and the working_status progress/room fields have
+    # only been confirmed on the Z Ultra
     if profile_for(coordinator.config_entry.data["product_key"]) == "zultra":
         entities.append(NarwalFanLevelSensor(coordinator))
+        entities.append(NarwalCleanProgressSensor(coordinator))
+        entities.append(NarwalCurrentRoomSensor(coordinator))
     async_add_entities(entities)
 
 
@@ -166,6 +169,10 @@ class NarwalCleanedAreaSensor(NarwalEntity, SensorEntity):
         state = self.coordinator.data
         if state is None:
             return None
+        if state.profile == "zultra":
+            # working_status field 2 is already m² (field 13 is a constant
+            # dryer time, not an area); None until the first clean is seen
+            return state.cleaned_area_m2
         return state.cleaned_area / 10000.0  # cm² to m²
 
 
@@ -183,3 +190,46 @@ class NarwalFanLevelSensor(NarwalEntity, SensorEntity):
     def native_value(self) -> str | None:
         level = self.coordinator.client.fan_level
         return None if level is None else FAN_SPEED_REVERSE.get(level.value)
+
+
+class NarwalCleanProgressSensor(NarwalEntity, SensorEntity):
+    """Progress of the current or most recent clean (working_status field 1)."""
+
+    _attr_translation_key = "clean_progress"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_icon = "mdi:progress-check"
+
+    def __init__(self, coordinator: NarwalCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.config_entry.data['device_name']}_clean_progress"
+
+    @property
+    def native_value(self) -> float | None:
+        state = self.coordinator.data
+        if state is None:
+            return None
+        return state.clean_progress
+
+
+class NarwalCurrentRoomSensor(NarwalEntity, SensorEntity):
+    """Room the robot is currently cleaning (working_status field 6)."""
+
+    _attr_translation_key = "current_room"
+    _attr_icon = "mdi:floor-plan"
+
+    def __init__(self, coordinator: NarwalCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.config_entry.data['device_name']}_current_room"
+
+    @property
+    def native_value(self) -> str | None:
+        state = self.coordinator.data
+        if state is None:
+            return None
+        return state.current_room_name
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        state = self.coordinator.data
+        return {"room_id": None if state is None else state.current_room_id}
