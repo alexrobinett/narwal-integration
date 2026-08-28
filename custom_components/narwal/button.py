@@ -92,7 +92,12 @@ class _NarwalDockActionButton(NarwalEntity, ButtonEntity):
 
     async def async_press(self) -> None:
         resp = await getattr(self.coordinator.client, self._method)()
-        _LOGGER.info("%s sent (success=%s)", self._suffix, resp.success)
+        if not resp.success:
+            # result 2 = NOT_APPLICABLE: the robot rejected it, e.g. a wash
+            # requested while the base is already drying.
+            _LOGGER.warning("%s returned code=%s", self._suffix, resp.result_code)
+        else:
+            _LOGGER.debug("%s accepted (code=%s)", self._suffix, resp.result_code)
 
 
 class NarwalWashMopButton(_NarwalDockActionButton):

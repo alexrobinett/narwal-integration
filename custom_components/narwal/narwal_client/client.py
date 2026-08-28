@@ -581,8 +581,14 @@ class NarwalClient:
         return await self.send_command(TOPIC_CMD_FORCE_END)
 
     async def _fire_and_forget(self, command: str) -> CommandResponse:
-        """Z Ultra supply/* commands never publish a /response; success shows up
-        as a base-status broadcast (upstream issue #5)."""
+        """Publish without waiting and report an inferred success.
+
+        Only used for supply/recall on the Z Ultra: live probes (2026-08-27)
+        showed the robot never publishes a /response for recall (upstream
+        issue #5), so success is inferred from the publish and the resulting
+        base-status broadcast. The other supply/* dock actions DO answer
+        (result 1 accepted, 2 NOT_APPLICABLE) and go through send_command.
+        """
         await self.send_command_no_response(command)
         return CommandResponse(result_code=1, success=True)
 
@@ -595,14 +601,14 @@ class NarwalClient:
         if self.state.profile == "zultra":
             # Sniffed from the app: "Mop washing" publishes supply/wash_and_dry_mop;
             # supply/wash_mop answers result 2 (NOT_APPLICABLE) on the Z Ultra.
-            return await self._fire_and_forget(TOPIC_CMD_WASH_AND_DRY_MOP)
-        return await self._fire_and_forget(TOPIC_CMD_WASH_MOP)
+            return await self.send_command(TOPIC_CMD_WASH_AND_DRY_MOP)
+        return await self.send_command(TOPIC_CMD_WASH_MOP)
 
     async def dry_mop(self) -> CommandResponse:
-        return await self._fire_and_forget(TOPIC_CMD_DRY_MOP)
+        return await self.send_command(TOPIC_CMD_DRY_MOP)
 
     async def empty_dustbin(self) -> CommandResponse:
-        return await self._fire_and_forget(TOPIC_CMD_DUST_GATHERING)
+        return await self.send_command(TOPIC_CMD_DUST_GATHERING)
 
     async def set_fan_speed(self, level: FanLevel) -> CommandResponse:
         extra = _make_protobuf_varint(1, fan_wire_value(self.product_key, level))
