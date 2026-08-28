@@ -69,8 +69,32 @@ def test_dock_actions_send_standard_frame_without_response():
         assert resp.success is True
 
     assert no_response_calls == [
-        ("supply/wash_mop", b"", None),
+        ("supply/wash_and_dry_mop", b"", None),
         ("supply/dry_mop", b"", None),
         ("supply/dust_gathering", b"", None),
     ]
     assert response_calls == []
+
+
+def test_zultra_wash_mop_uses_wash_and_dry_topic():
+    """Sniffed from the official app: 'Mop washing' publishes supply/wash_and_dry_mop;
+    supply/wash_mop returns NOT_APPLICABLE (result 2) on the Freo Z Ultra."""
+    client = _client(ZULTRA_KEY)
+    no_response_calls, response_calls = _instrument(client)
+
+    resp = asyncio.run(client.wash_mop())
+
+    assert no_response_calls == [("supply/wash_and_dry_mop", b"", None)]
+    assert response_calls == []
+    assert resp.success is True
+
+
+def test_legacy_wash_mop_keeps_upstream_topic():
+    client = _client(LEGACY_KEY)
+    no_response_calls, response_calls = _instrument(client)
+
+    resp = asyncio.run(client.wash_mop())
+
+    assert no_response_calls == [("supply/wash_mop", b"", None)]
+    assert response_calls == []
+    assert resp.success is True

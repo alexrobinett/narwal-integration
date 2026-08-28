@@ -26,6 +26,9 @@ TOPIC_CMD_CANCEL = "task/cancel"
 # Supply/dock
 TOPIC_CMD_RECALL = "supply/recall"
 TOPIC_CMD_WASH_MOP = "supply/wash_mop"
+# Freo Z Ultra: the app's 'Mop washing' (wash then dry); supply/wash_mop is
+# NOT_APPLICABLE on this model.
+TOPIC_CMD_WASH_AND_DRY_MOP = "supply/wash_and_dry_mop"
 TOPIC_CMD_DRY_MOP = "supply/dry_mop"
 TOPIC_CMD_DUST_GATHERING = "supply/dust_gathering"
 

@@ -35,6 +35,7 @@ from .const import (
     TOPIC_CMD_SET_MOP_HUMIDITY,
     TOPIC_CMD_START_CLEAN,
     TOPIC_CMD_START_PLAN,
+    TOPIC_CMD_WASH_AND_DRY_MOP,
     TOPIC_CMD_WASH_MOP,
     TOPIC_CMD_YELL,
     TOPIC_ROBOT_BASE_STATUS,
@@ -591,6 +592,10 @@ class NarwalClient:
         return await self.send_command(TOPIC_CMD_RECALL)
 
     async def wash_mop(self) -> CommandResponse:
+        if self.state.profile == "zultra":
+            # Sniffed from the app: "Mop washing" publishes supply/wash_and_dry_mop;
+            # supply/wash_mop answers result 2 (NOT_APPLICABLE) on the Z Ultra.
+            return await self._fire_and_forget(TOPIC_CMD_WASH_AND_DRY_MOP)
         return await self._fire_and_forget(TOPIC_CMD_WASH_MOP)
 
     async def dry_mop(self) -> CommandResponse:
